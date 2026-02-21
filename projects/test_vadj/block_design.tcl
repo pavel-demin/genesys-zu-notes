@@ -40,7 +40,7 @@ cell xilinx.com:ip:xxv_ethernet phy_0 {
 # VADJ GPIO
 
 # Create vadj_gpio
-cell pavel-demin:user:vadj_gpio gpio_0 {} {
+cell vadj_gpio gpio_0 {} {
   gpio vadj_gpio_o
   aclk clk_i
 }

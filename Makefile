@@ -7,20 +7,15 @@
 NAME = led_blinker
 PART = xczu5ev-sfvc784-1-e
 
-FILES = $(wildcard cores/*.v)
-CORES = $(FILES:.v=)
-
 VIVADO = vivado -nolog -nojournal -mode batch
 XSCT = xsct
 RM = rm -rf
 
-.PRECIOUS: tmp/cores/% tmp/%.xpr tmp/%.bit
+.PRECIOUS: tmp/%.xpr tmp/%.bit
 
-.PHONY: all cores xpr bit run
+.PHONY: all xpr bit run
 
 all: tmp/$(NAME).bit
-
-cores: $(addprefix tmp/, $(CORES))
 
 xpr: tmp/$(NAME).xpr
 
@@ -28,10 +23,6 @@ bit: tmp/$(NAME).bit
 
 run: tmp/$(NAME).bit
 	$(XSCT) scripts/jtag.tcl $<
-
-tmp/cores/%: cores/%.v
-	mkdir -p $(@D)
-	$(VIVADO) -source scripts/core.tcl -tclargs $* $(PART)
 
 tmp/%.xpr: projects/% $(addprefix tmp/, $(CORES))
 	mkdir -p $(@D)
