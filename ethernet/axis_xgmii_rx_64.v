@@ -36,10 +36,7 @@ module axis_xgmii_rx_64 #
     parameter DATA_WIDTH = 64,
     parameter KEEP_WIDTH = (DATA_WIDTH/8),
     parameter CTRL_WIDTH = (DATA_WIDTH/8),
-    parameter PTP_TS_ENABLE = 0,
-    parameter PTP_TS_FMT_TOD = 1,
-    parameter PTP_TS_WIDTH = PTP_TS_FMT_TOD ? 96 : 64,
-    parameter USER_WIDTH = (PTP_TS_ENABLE ? PTP_TS_WIDTH : 0) + 1
+    parameter USER_WIDTH = 1
 )
 (
     input  wire                     clk,
@@ -59,11 +56,6 @@ module axis_xgmii_rx_64 #
     output wire                     m_axis_tvalid,
     output wire                     m_axis_tlast,
     output wire [USER_WIDTH-1:0]    m_axis_tuser,
-
-    /*
-     * PTP
-     */
-    input  wire [PTP_TS_WIDTH-1:0]  ptp_ts,
 
     /*
      * Configuration
@@ -141,10 +133,6 @@ reg [1:0] start_packet_reg = 2'b00;
 reg error_bad_frame_reg = 1'b0, error_bad_frame_next;
 reg error_bad_fcs_reg = 1'b0, error_bad_fcs_next;
 
-reg [PTP_TS_WIDTH-1:0] ptp_ts_reg = 0;
-reg [PTP_TS_WIDTH-1:0] ptp_ts_adj_reg = 0;
-reg ptp_ts_borrow_reg = 0;
-
 reg [31:0] crc_state = 32'hFFFFFFFF;
 
 wire [31:0] crc_next;
@@ -160,9 +148,6 @@ assign crc_valid[3] = crc_next == ~32'h6522df69;
 assign crc_valid[2] = crc_next == ~32'he60914ae;
 assign crc_valid[1] = crc_next == ~32'he38a6876;
 assign crc_valid[0] = crc_next == ~32'h6b87b1ec;
-
-reg [4+16-1:0] last_ts_reg = 0;
-reg [4+16-1:0] ts_inc_reg = 0;
 
 assign m_axis_tdata = m_axis_tdata_reg;
 assign m_axis_tkeep = m_axis_tkeep_reg;
@@ -236,10 +221,6 @@ always @* begin
             m_axis_tvalid_next = 1'b1;
             m_axis_tlast_next = 1'b0;
             m_axis_tuser_next[0] = 1'b0;
-
-            if (PTP_TS_ENABLE) begin
-                m_axis_tuser_next[1 +: PTP_TS_WIDTH] = (!PTP_TS_FMT_TOD || ptp_ts_borrow_reg) ? ptp_ts_reg : ptp_ts_adj_reg;
-            end
 
             if (framing_error_reg || framing_error_d0_reg) begin
                 // control or error characters in packet
@@ -328,14 +309,6 @@ always @(posedge clk) begin
     xgmii_start_swap <= 1'b0;
     xgmii_start_d0 <= xgmii_start_swap;
 
-    if (PTP_TS_ENABLE && PTP_TS_FMT_TOD) begin
-        // ns field rollover
-        ptp_ts_adj_reg[15:0] <= ptp_ts_reg[15:0];
-        {ptp_ts_borrow_reg, ptp_ts_adj_reg[45:16]} <= $signed({1'b0, ptp_ts_reg[45:16]}) - $signed(31'd1000000000);
-        ptp_ts_adj_reg[47:46] <= 0;
-        ptp_ts_adj_reg[95:48] <= ptp_ts_reg[95:48] + 1;
-    end
-
     // lane swapping and termination character detection
     if (lanes_swapped) begin
         xgmii_rxd_d0 <= {xgmii_rxd_masked[31:0], swap_rxd};
@@ -393,18 +366,11 @@ always @(posedge clk) begin
     // capture timestamps
     if (xgmii_start_swap) begin
         start_packet_reg <= 2'b10;
-        if (PTP_TS_FMT_TOD) begin
-            ptp_ts_reg[45:0] <= ptp_ts[45:0] + (ts_inc_reg >> 1);
-            ptp_ts_reg[95:48] <= ptp_ts[95:48];
-        end else begin
-            ptp_ts_reg <= ptp_ts + (ts_inc_reg >> 1);
-        end
     end
 
     if (xgmii_start_d0) begin
         if (!lanes_swapped) begin
             start_packet_reg <= 2'b01;
-            ptp_ts_reg <= ptp_ts;
         end
     end
 
@@ -421,9 +387,6 @@ always @(posedge clk) begin
 
     xgmii_rxd_d1 <= xgmii_rxd_d0;
     xgmii_start_d1 <= xgmii_start_d0;
-
-    last_ts_reg <= ptp_ts;
-    ts_inc_reg <= ptp_ts - last_ts_reg;
 
     if (rst) begin
         state_reg <= STATE_IDLE;

@@ -39,13 +39,7 @@ module axis_xgmii_tx_64 #
     parameter ENABLE_PADDING = 1,
     parameter ENABLE_DIC = 1,
     parameter MIN_FRAME_LENGTH = 64,
-    parameter PTP_TS_ENABLE = 0,
-    parameter PTP_TS_FMT_TOD = 1,
-    parameter PTP_TS_WIDTH = PTP_TS_FMT_TOD ? 96 : 64,
-    parameter PTP_TS_CTRL_IN_TUSER = 0,
-    parameter PTP_TAG_ENABLE = PTP_TS_ENABLE,
-    parameter PTP_TAG_WIDTH = 16,
-    parameter USER_WIDTH = (PTP_TS_ENABLE ? (PTP_TAG_ENABLE ? PTP_TAG_WIDTH : 0) + (PTP_TS_CTRL_IN_TUSER ? 1 : 0) : 0) + 1
+    parameter USER_WIDTH = 1
 )
 (
     input  wire                      clk,
@@ -66,14 +60,6 @@ module axis_xgmii_tx_64 #
      */
     output wire [DATA_WIDTH-1:0]     xgmii_txd,
     output wire [CTRL_WIDTH-1:0]     xgmii_txc,
-
-    /*
-     * PTP
-     */
-    input  wire [PTP_TS_WIDTH-1:0]   ptp_ts,
-    output wire [PTP_TS_WIDTH-1:0]   m_axis_ptp_ts,
-    output wire [PTP_TAG_WIDTH-1:0]  m_axis_ptp_ts_tag,
-    output wire                      m_axis_ptp_ts_valid,
 
     /*
      * Configuration
@@ -155,18 +141,8 @@ reg [1:0] deficit_idle_count_reg = 2'd0, deficit_idle_count_next;
 
 reg s_axis_tready_reg = 1'b0, s_axis_tready_next;
 
-reg [PTP_TS_WIDTH-1:0] m_axis_ptp_ts_reg = 0;
-reg [PTP_TS_WIDTH-1:0] m_axis_ptp_ts_adj_reg = 0;
-reg [PTP_TAG_WIDTH-1:0] m_axis_ptp_ts_tag_reg = 0;
-reg m_axis_ptp_ts_valid_reg = 1'b0;
-reg m_axis_ptp_ts_valid_int_reg = 1'b0;
-reg m_axis_ptp_ts_borrow_reg = 1'b0;
-
 reg [31:0] crc_state_reg[7:0];
 wire [31:0] crc_state_next[7:0];
-
-reg [4+16-1:0] last_ts_reg = 0;
-reg [4+16-1:0] ts_inc_reg = 0;
 
 reg [DATA_WIDTH-1:0] xgmii_txd_reg = {CTRL_WIDTH{XGMII_IDLE}}, xgmii_txd_next;
 reg [CTRL_WIDTH-1:0] xgmii_txc_reg = {CTRL_WIDTH{1'b1}}, xgmii_txc_next;
@@ -178,10 +154,6 @@ assign s_axis_tready = s_axis_tready_reg;
 
 assign xgmii_txd = xgmii_txd_reg;
 assign xgmii_txc = xgmii_txc_reg;
-
-assign m_axis_ptp_ts = PTP_TS_ENABLE ? ((!PTP_TS_FMT_TOD || m_axis_ptp_ts_borrow_reg) ? m_axis_ptp_ts_reg : m_axis_ptp_ts_adj_reg) : 0;
-assign m_axis_ptp_ts_tag = PTP_TAG_ENABLE ? m_axis_ptp_ts_tag_reg : 0;
-assign m_axis_ptp_ts_valid = PTP_TS_ENABLE || PTP_TAG_ENABLE ? m_axis_ptp_ts_valid_reg : 1'b0;
 
 assign start_packet = start_packet_reg;
 assign error_underflow = error_underflow_reg;
@@ -547,53 +519,14 @@ always @(posedge clk) begin
 
     s_axis_tready_reg <= s_axis_tready_next;
 
-    m_axis_ptp_ts_valid_reg <= 1'b0;
-    m_axis_ptp_ts_valid_int_reg <= 1'b0;
-
     start_packet_reg <= 2'b00;
     error_underflow_reg <= error_underflow_next;
 
-    if (PTP_TS_ENABLE && PTP_TS_FMT_TOD) begin
-        m_axis_ptp_ts_valid_reg <= m_axis_ptp_ts_valid_int_reg;
-        m_axis_ptp_ts_adj_reg[15:0] <= m_axis_ptp_ts_reg[15:0];
-        {m_axis_ptp_ts_borrow_reg, m_axis_ptp_ts_adj_reg[45:16]} <= $signed({1'b0, m_axis_ptp_ts_reg[45:16]}) - $signed(31'd1000000000);
-        m_axis_ptp_ts_adj_reg[47:46] <= 0;
-        m_axis_ptp_ts_adj_reg[95:48] <= m_axis_ptp_ts_reg[95:48] + 1;
-    end
-
     if (frame_start_reg) begin
         if (swap_lanes_reg) begin
-            if (PTP_TS_ENABLE) begin
-                if (PTP_TS_FMT_TOD) begin
-                    m_axis_ptp_ts_reg[45:0] <= ptp_ts[45:0] + (ts_inc_reg >> 1);
-                    m_axis_ptp_ts_reg[95:48] <= ptp_ts[95:48];
-                end else begin
-                    m_axis_ptp_ts_reg <= ptp_ts + (ts_inc_reg >> 1);
-                end
-            end
             start_packet_reg <= 2'b10;
         end else begin
-            if (PTP_TS_ENABLE) begin
-                m_axis_ptp_ts_reg <= ptp_ts;
-            end
             start_packet_reg <= 2'b01;
-        end
-        if (PTP_TS_ENABLE) begin
-            if (PTP_TS_CTRL_IN_TUSER) begin
-                m_axis_ptp_ts_tag_reg <= s_axis_tuser >> 2;
-                if (PTP_TS_FMT_TOD) begin
-                    m_axis_ptp_ts_valid_int_reg <= s_axis_tuser[1];
-                end else begin
-                    m_axis_ptp_ts_valid_reg <= s_axis_tuser[1];
-                end
-            end else begin
-                m_axis_ptp_ts_tag_reg <= s_axis_tuser >> 1;
-                if (PTP_TS_FMT_TOD) begin
-                    m_axis_ptp_ts_valid_int_reg <= 1'b1;
-                end else begin
-                    m_axis_ptp_ts_valid_reg <= 1'b1;
-                end
-            end
         end
     end
 
@@ -624,9 +557,6 @@ always @(posedge clk) begin
         xgmii_txc_reg <= xgmii_txc_next;
     end
 
-    last_ts_reg <= ptp_ts;
-    ts_inc_reg <= ptp_ts - last_ts_reg;
-
     if (rst) begin
         state_reg <= STATE_IDLE;
 
@@ -639,9 +569,6 @@ always @(posedge clk) begin
         deficit_idle_count_reg <= 2'd0;
 
         s_axis_tready_reg <= 1'b0;
-
-        m_axis_ptp_ts_valid_reg <= 1'b0;
-        m_axis_ptp_ts_valid_int_reg <= 1'b0;
 
         xgmii_txd_reg <= {CTRL_WIDTH{XGMII_IDLE}};
         xgmii_txc_reg <= {CTRL_WIDTH{1'b1}};
