@@ -54,7 +54,7 @@ module axis_upsizer #
     end
   end
 
-  inout_buffer #(
+  no_buffer #(
     .DATA_WIDTH(M_AXIS_TDATA_WIDTH)
   ) buf_0 (
     .aclk(aclk), .aresetn(aresetn),
