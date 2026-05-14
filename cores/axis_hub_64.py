@@ -2,7 +2,7 @@ hub_size = 6
 source = """
 `timescale 1 ns / 1 ps
 
-module axis_hub #
+module axis_hub_64 #
 (
   parameter integer CFG_DATA_WIDTH = 1024,
   parameter integer STS_DATA_WIDTH = 1024

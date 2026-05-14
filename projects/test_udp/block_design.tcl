@@ -61,8 +61,8 @@ cell axis_udp udp_0 {} {
 
 # HUB
 
-# Create axis_hub
-cell axis_hub hub_0 {
+# Create axis_hub_64
+cell axis_hub_64 hub_0 {
   CFG_DATA_WIDTH 64
   STS_DATA_WIDTH 64
 } {
