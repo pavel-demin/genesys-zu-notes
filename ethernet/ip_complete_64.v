@@ -76,6 +76,8 @@ module ip_complete_64 #(
      */
     input  wire        s_ip_hdr_valid,
     output wire        s_ip_hdr_ready,
+    input  wire [47:0] s_ip_eth_dest_mac,
+    input  wire [47:0] s_ip_eth_src_mac,
     input  wire [5:0]  s_ip_dscp,
     input  wire [1:0]  s_ip_ecn,
     input  wire [15:0] s_ip_length,
@@ -128,16 +130,12 @@ module ip_complete_64 #(
     output wire rx_error_invalid_header,
     output wire rx_error_invalid_checksum,
     output wire tx_error_payload_early_termination,
-    output wire tx_error_arp_failed,
 
     /*
      * Configuration
      */
     input  wire [47:0] local_mac,
-    input  wire [31:0] local_ip,
-    input  wire [31:0] gateway_ip,
-    input  wire [31:0] subnet_mask,
-    input  wire        clear_arp_cache
+    input  wire [31:0] local_ip
 );
 
 /*
@@ -145,14 +143,6 @@ module ip_complete_64 #(
 This module integrates the IP and ARP modules for a complete IP stack
 
 */
-
-wire arp_request_valid;
-wire arp_request_ready;
-wire [31:0] arp_request_ip;
-wire arp_response_valid;
-wire arp_response_ready;
-wire arp_response_error;
-wire [47:0] arp_response_mac;
 
 wire ip_rx_eth_hdr_valid;
 wire ip_rx_eth_hdr_ready;
@@ -368,6 +358,8 @@ ip_inst (
     // IP frame input
     .s_ip_hdr_valid(s_ip_hdr_valid),
     .s_ip_hdr_ready(s_ip_hdr_ready),
+    .s_ip_eth_dest_mac(s_ip_eth_dest_mac),
+    .s_ip_eth_src_mac(s_ip_eth_src_mac),
     .s_ip_dscp(s_ip_dscp),
     .s_ip_ecn(s_ip_ecn),
     .s_ip_length(s_ip_length),
@@ -381,14 +373,6 @@ ip_inst (
     .s_ip_payload_axis_tready(s_ip_payload_axis_tready),
     .s_ip_payload_axis_tlast(s_ip_payload_axis_tlast),
     .s_ip_payload_axis_tuser(s_ip_payload_axis_tuser),
-    // ARP requests
-    .arp_request_valid(arp_request_valid),
-    .arp_request_ready(arp_request_ready),
-    .arp_request_ip(arp_request_ip),
-    .arp_response_valid(arp_response_valid),
-    .arp_response_ready(arp_response_ready),
-    .arp_response_error(arp_response_error),
-    .arp_response_mac(arp_response_mac),
     // Status
     .rx_busy(rx_busy),
     .tx_busy(tx_busy),
@@ -396,11 +380,7 @@ ip_inst (
     .rx_error_payload_early_termination(rx_error_payload_early_termination),
     .rx_error_invalid_header(rx_error_invalid_header),
     .rx_error_invalid_checksum(rx_error_invalid_checksum),
-    .tx_error_payload_early_termination(tx_error_payload_early_termination),
-    .tx_error_arp_failed(tx_error_arp_failed),
-    // Configuration
-    .local_mac(local_mac),
-    .local_ip(local_ip)
+    .tx_error_payload_early_termination(tx_error_payload_early_termination)
 );
 
 /*
@@ -442,20 +422,9 @@ arp_inst (
     .m_eth_payload_axis_tready(arp_tx_eth_payload_axis_tready),
     .m_eth_payload_axis_tlast(arp_tx_eth_payload_axis_tlast),
     .m_eth_payload_axis_tuser(arp_tx_eth_payload_axis_tuser),
-    // ARP requests
-    .arp_request_valid(arp_request_valid),
-    .arp_request_ready(arp_request_ready),
-    .arp_request_ip(arp_request_ip),
-    .arp_response_valid(arp_response_valid),
-    .arp_response_ready(arp_response_ready),
-    .arp_response_error(arp_response_error),
-    .arp_response_mac(arp_response_mac),
     // Configuration
     .local_mac(local_mac),
-    .local_ip(local_ip),
-    .gateway_ip(gateway_ip),
-    .subnet_mask(subnet_mask),
-    .clear_cache(clear_arp_cache)
+    .local_ip(local_ip)
 );
 
 endmodule

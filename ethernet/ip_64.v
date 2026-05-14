@@ -67,21 +67,12 @@ module ip_64
     output wire        m_eth_payload_axis_tuser,
 
     /*
-     * ARP requests
-     */
-    output wire        arp_request_valid,
-    input  wire        arp_request_ready,
-    output wire [31:0] arp_request_ip,
-    input  wire        arp_response_valid,
-    output wire        arp_response_ready,
-    input  wire        arp_response_error,
-    input  wire [47:0] arp_response_mac,
-
-    /*
      * IP input
      */
     input  wire        s_ip_hdr_valid,
     output wire        s_ip_hdr_ready,
+    input  wire [47:0] s_ip_eth_dest_mac,
+    input  wire [47:0] s_ip_eth_src_mac,
     input  wire [5:0]  s_ip_dscp,
     input  wire [1:0]  s_ip_ecn,
     input  wire [15:0] s_ip_length,
@@ -133,26 +124,17 @@ module ip_64
     output wire rx_error_payload_early_termination,
     output wire rx_error_invalid_header,
     output wire rx_error_invalid_checksum,
-    output wire tx_error_payload_early_termination,
-    output wire tx_error_arp_failed,
-
-    /*
-     * Configuration
-     */
-    input  wire [47:0] local_mac,
-    input  wire [31:0] local_ip
+    output wire tx_error_payload_early_termination
 );
 
-localparam [1:0]
-    STATE_IDLE = 2'd0,
-    STATE_ARP_QUERY = 2'd1,
-    STATE_WAIT_PACKET = 2'd2;
+localparam
+    STATE_IDLE = 1'b0,
+    STATE_WAIT_PACKET = 1'b1;
 
-reg [1:0] state_reg = STATE_IDLE, state_next;
+reg state_reg = STATE_IDLE, state_next;
 
 reg outgoing_ip_hdr_valid_reg = 1'b0, outgoing_ip_hdr_valid_next;
 wire outgoing_ip_hdr_ready;
-reg [47:0] outgoing_eth_dest_mac_reg = 48'h000000000000, outgoing_eth_dest_mac_next;
 wire outgoing_ip_payload_axis_tready;
 
 /*
@@ -214,8 +196,8 @@ ip_eth_tx_64_inst (
     // IP frame input
     .s_ip_hdr_valid(outgoing_ip_hdr_valid_reg),
     .s_ip_hdr_ready(outgoing_ip_hdr_ready),
-    .s_eth_dest_mac(outgoing_eth_dest_mac_reg),
-    .s_eth_src_mac(local_mac),
+    .s_eth_dest_mac(s_ip_eth_dest_mac),
+    .s_eth_src_mac(s_ip_eth_src_mac),
     .s_eth_type(16'h0800),
     .s_ip_dscp(s_ip_dscp),
     .s_ip_ecn(s_ip_ecn),
@@ -252,69 +234,28 @@ ip_eth_tx_64_inst (
 
 reg s_ip_hdr_ready_reg = 1'b0, s_ip_hdr_ready_next;
 
-reg arp_request_valid_reg = 1'b0, arp_request_valid_next;
-
-reg arp_response_ready_reg = 1'b0, arp_response_ready_next;
-
-reg drop_packet_reg = 1'b0, drop_packet_next;
-
 assign s_ip_hdr_ready = s_ip_hdr_ready_reg;
-assign s_ip_payload_axis_tready = outgoing_ip_payload_axis_tready || drop_packet_reg;
-
-assign arp_request_valid = arp_request_valid_reg;
-assign arp_request_ip = s_ip_dest_ip;
-assign arp_response_ready = arp_response_ready_reg;
-
-assign tx_error_arp_failed = arp_response_error;
+assign s_ip_payload_axis_tready = outgoing_ip_payload_axis_tready;
 
 always @* begin
     state_next = STATE_IDLE;
 
-    arp_request_valid_next = arp_request_valid_reg && !arp_request_ready;
-    arp_response_ready_next = 1'b0;
-    drop_packet_next = 1'b0;
-
     s_ip_hdr_ready_next = 1'b0;
 
     outgoing_ip_hdr_valid_next = outgoing_ip_hdr_valid_reg && !outgoing_ip_hdr_ready;
-    outgoing_eth_dest_mac_next = outgoing_eth_dest_mac_reg;
 
     case (state_reg)
         STATE_IDLE: begin
             // wait for outgoing packet
             if (s_ip_hdr_valid) begin
-                // initiate ARP request
-                arp_request_valid_next = 1'b1;
-                arp_response_ready_next = 1'b1;
-                state_next = STATE_ARP_QUERY;
+                s_ip_hdr_ready_next = 1'b1;
+                outgoing_ip_hdr_valid_next = 1'b1;
+                state_next = STATE_WAIT_PACKET;
             end else begin
                 state_next = STATE_IDLE;
             end
         end
-        STATE_ARP_QUERY: begin
-            arp_response_ready_next = 1'b1;
-
-            if (arp_response_valid) begin
-                // wait for ARP reponse
-                if (arp_response_error) begin
-                    // did not get MAC address; drop packet
-                    s_ip_hdr_ready_next = 1'b1;
-                    drop_packet_next = 1'b1;
-                    state_next = STATE_WAIT_PACKET;
-                end else begin
-                    // got MAC address; send packet
-                    s_ip_hdr_ready_next = 1'b1;
-                    outgoing_ip_hdr_valid_next = 1'b1;
-                    outgoing_eth_dest_mac_next = arp_response_mac;
-                    state_next = STATE_WAIT_PACKET;
-                end
-            end else begin
-                state_next = STATE_ARP_QUERY;
-            end
-        end
         STATE_WAIT_PACKET: begin
-            drop_packet_next = drop_packet_reg;
-
             // wait for packet transfer to complete
             if (s_ip_payload_axis_tlast && s_ip_payload_axis_tready && s_ip_payload_axis_tvalid) begin
                 state_next = STATE_IDLE;
@@ -328,24 +269,14 @@ end
 always @(posedge clk) begin
     if (rst) begin
         state_reg <= STATE_IDLE;
-        arp_request_valid_reg <= 1'b0;
-        arp_response_ready_reg <= 1'b0;
-        drop_packet_reg <= 1'b0;
         s_ip_hdr_ready_reg <= 1'b0;
         outgoing_ip_hdr_valid_reg <= 1'b0;
     end else begin
         state_reg <= state_next;
-
-        arp_request_valid_reg <= arp_request_valid_next;
-        arp_response_ready_reg <= arp_response_ready_next;
-        drop_packet_reg <= drop_packet_next;
-
         s_ip_hdr_ready_reg <= s_ip_hdr_ready_next;
-
         outgoing_ip_hdr_valid_reg <= outgoing_ip_hdr_valid_next;
     end
 
-    outgoing_eth_dest_mac_reg <= outgoing_eth_dest_mac_next;
 end
 
 endmodule
