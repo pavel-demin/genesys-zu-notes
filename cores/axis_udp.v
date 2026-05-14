@@ -33,8 +33,6 @@ module axis_udp
   wire [47:0] local_mac = 48'h52_54_0A_01_01_70;
   wire [31:0] local_ip = {8'd10, 8'd1, 8'd1, 8'd112};
   wire [15:0] local_port = 16'd1234;
-  wire [31:0] gateway_ip = {8'd10, 8'd1, 8'd1, 8'd1};
-  wire [31:0] subnet_mask = {8'd255, 8'd255, 8'd255, 8'd0};
 
   wire [63:0] tx_fifo_tdata [1:0];
   wire [7:0] tx_fifo_tkeep [1:0];
@@ -80,6 +78,7 @@ module axis_udp
   // UDP frame connections
   wire rx_udp_hdr_valid;
   wire rx_udp_hdr_ready;
+  wire [47:0] rx_udp_eth_src_mac;
   wire [31:0] rx_udp_ip_source_ip;
   wire [15:0] rx_udp_dest_port;
 
@@ -105,6 +104,7 @@ module axis_udp
   reg match_reg = 1'b0;
   reg no_match_reg = 1'b1;
 
+  reg [47:0] tx_udp_dest_mac_reg = 48'd0;
   reg [31:0] tx_udp_dest_ip_reg = 32'd0;
   reg [9:0] tx_fifo_cntr_reg = 10'd0;
   reg tx_udp_hdr_valid_reg = 1'b0;
@@ -114,12 +114,14 @@ module axis_udp
   begin
     if(xgmii_rst)
     begin
+      tx_udp_dest_mac_reg <= 48'd0;
       tx_udp_dest_ip_reg <= 32'd0;
       match_reg <= 1'b0;
       no_match_reg <= 1'b1;
     end
     else if(rx_udp_hdr_valid)
     begin
+      tx_udp_dest_mac_reg <= rx_udp_eth_src_mac;
       tx_udp_dest_ip_reg <= rx_udp_ip_source_ip;
       match_reg <= match;
       no_match_reg <= ~match;
@@ -181,7 +183,6 @@ module axis_udp
     .m_axis_tuser(rx_fifo_tuser[0]),
     .m_axis_tlast(rx_fifo_tlast[0]),
     .m_axis_tvalid(rx_fifo_tvalid),
-    .ptp_ts(96'd0),
     .cfg_rx_enable(1'b1),
     .start_packet(),
     .error_bad_frame(),
@@ -333,12 +334,11 @@ module axis_udp
     .m_eth_payload_axis_tlast(tx_eth_payload_axis_tlast),
     .m_eth_payload_axis_tvalid(tx_eth_payload_axis_tvalid),
     .m_eth_payload_axis_tready(tx_eth_payload_axis_tready),
-    // IP frame output
-    .m_ip_hdr_ready(1'b1),
-    .m_ip_payload_axis_tready(1'b1),
     // UDP frame input
     .s_udp_hdr_valid(tx_udp_hdr_valid),
     .s_udp_hdr_ready(tx_udp_hdr_ready),
+    .s_udp_eth_dest_mac(tx_udp_dest_mac_reg),
+    .s_udp_eth_src_mac(local_mac),
     .s_udp_ip_dscp(6'd0),
     .s_udp_ip_ecn(2'd0),
     .s_udp_ip_ttl(8'd64),
@@ -358,7 +358,7 @@ module axis_udp
     .m_udp_hdr_valid(rx_udp_hdr_valid),
     .m_udp_hdr_ready(rx_udp_hdr_ready),
     .m_udp_eth_dest_mac(),
-    .m_udp_eth_src_mac(),
+    .m_udp_eth_src_mac(rx_udp_eth_src_mac),
     .m_udp_eth_type(),
     .m_udp_ip_version(),
     .m_udp_ip_ihl(),
@@ -385,10 +385,7 @@ module axis_udp
     .m_udp_payload_axis_tready(rx_udp_payload_axis_tready),
     // Configuration
     .local_mac(local_mac),
-    .local_ip(local_ip),
-    .gateway_ip(gateway_ip),
-    .subnet_mask(subnet_mask),
-    .clear_arp_cache(1'b0)
+    .local_ip(local_ip)
   );
 
   xpm_fifo_async #(
