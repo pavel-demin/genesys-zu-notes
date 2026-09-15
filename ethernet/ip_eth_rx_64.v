@@ -336,7 +336,7 @@ always @* begin
             s_eth_payload_axis_tready_next = shift_eth_payload_s_tready;
             word_count_next = m_ip_length_reg - 5*4;
 
-            if (s_eth_payload_axis_tvalid) begin
+            if (shift_eth_payload_axis_tvalid) begin
                 // word transfer in - store it
                 hdr_ptr_next = hdr_ptr_reg + 6'd8;
                 transfer_in_save = 1'b1;
